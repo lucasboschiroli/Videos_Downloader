@@ -1,30 +1,15 @@
-#!/usr/bin/env python3
-"""
-Video Downloader - Downloads videos from various platforms
-Requires: pip install yt-dlp
-"""
-
 import yt_dlp
 import sys
 from pathlib import Path
 
 def download_video(url, output_path='downloads'):
-    """
-    Download video from URL
-    
-    Args:
-        url: Video URL to download
-        output_path: Directory to save downloaded videos
-    """
-    # Create output directory if it doesn't exist
     Path(output_path).mkdir(parents=True, exist_ok=True)
     
-    # Configure download options
     ydl_opts = {
-        'format': 'bestvideo+bestaudio/best',  # Best quality
-        'outtmpl': f'{output_path}/%(title)s.%(ext)s',  # Output filename template
-        'merge_output_format': 'mp4',  # Merge to mp4
-        'progress_hooks': [progress_hook],  # Show progress
+        'format': 'bestvideo+bestaudio/best',  
+        'outtmpl': f'{output_path}/%(title)s.%(ext)s',  
+        'merge_output_format': 'mp4',  
+        'progress_hooks': [progress_hook],  
     }
     
     try:
@@ -38,7 +23,6 @@ def download_video(url, output_path='downloads'):
         return False
 
 def progress_hook(d):
-    """Display download progress"""
     if d['status'] == 'downloading':
         percent = d.get('_percent_str', 'N/A')
         speed = d.get('_speed_str', 'N/A')
@@ -48,7 +32,6 @@ def progress_hook(d):
         print("\nDownload complete, processing...")
 
 def download_audio_only(url, output_path='downloads'):
-    """Download audio only (for music, podcasts, etc.)"""
     Path(output_path).mkdir(parents=True, exist_ok=True)
     
     ydl_opts = {
@@ -73,7 +56,6 @@ def download_audio_only(url, output_path='downloads'):
         return False
 
 def batch_download(urls_file, output_path='downloads'):
-    """Download multiple videos from a text file (one URL per line)"""
     try:
         with open(urls_file, 'r') as f:
             urls = [line.strip() for line in f if line.strip()]
