@@ -21,9 +21,9 @@
         <div class="logo">Videos <span>Downloader</span></div>
         <form id="linkForm" class="link-box">
             <svg class="link-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>
-            <input id="linkInput" type="text" placeholder="Paste a YouTube playlist or video link…" autocomplete="off" spellcheck="false">
+            <input id="linkInput" type="text" placeholder="Paste a playlist or video link to add it to the queue…" autocomplete="off" spellcheck="false">
             <button type="button" id="pasteBtn" class="ghost-btn" title="Paste from clipboard">Paste</button>
-            <button type="submit" id="loadBtn" class="accent-btn">Load</button>
+            <button type="submit" id="loadBtn" class="accent-btn">Add</button>
         </form>
         <div class="header-right">
             <span id="toolBadge" class="tool-badge" title=""></span>
@@ -86,8 +86,8 @@
             <div class="empty-icon">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
             </div>
-            <h2>Paste a link to get started</h2>
-            <p>Playlists show every video so you can pick what to download. Single videos work too.</p>
+            <h2>Paste a link to start your queue</h2>
+            <p>Add as many playlists and videos as you like: each link joins the queue. YouTube, GDC Vault and 1000+ other sites work.</p>
         </section>
 
         <section id="loadingState" class="empty hidden">
@@ -101,14 +101,17 @@
             <p id="errorText"></p>
         </section>
 
-        <section id="playlist" class="hidden">
+        <section id="queue" class="hidden">
             <div class="playlist-head">
                 <div>
-                    <h1 id="plTitle" class="section-title"></h1>
-                    <p id="plMeta" class="meta"></p>
+                    <h1 class="section-title">Queue</h1>
+                    <p id="queueMeta" class="meta"></p>
                 </div>
                 <div class="playlist-actions">
-                    <label class="toggle"><input type="checkbox" id="selectAll" checked><span></span>Select all</label>
+                    <button id="clearDoneBtn" class="ghost-btn" title="Remove downloaded videos from the queue">Clear finished</button>
+                    <button id="clearAllBtn" class="ghost-btn danger" title="Empty the queue">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>Clear all
+                    </button>
                     <button id="cancelBtn" class="outline-btn hidden">Cancel</button>
                     <button id="downloadBtn" class="accent-btn">Download</button>
                 </div>
@@ -122,7 +125,16 @@
                 <div class="bar"><div id="overallFill" class="bar-fill"></div></div>
             </div>
 
-            <ol id="items" class="items"></ol>
+            <div id="groups" class="groups"></div>
+
+            <div id="pendingLoad" class="pending card hidden">
+                <div class="spinner small"></div>
+                <span id="pendingText">Reading link…</span>
+            </div>
+            <div id="loadError" class="load-error card hidden">
+                <span id="loadErrorText"></span>
+                <button id="loadErrorClose" class="remove-btn" title="Dismiss">✕</button>
+            </div>
         </section>
     </main>
 

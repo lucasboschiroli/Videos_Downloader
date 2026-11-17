@@ -28,10 +28,19 @@ function loadSettings() {
     }
 }
 
-function saveSettings(s) {
-    fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
-    fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2));
+// Write to a temp file and rename, so a read never sees a half-written file.
+function writeAtomic(file, text) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(`${file}.tmp`, text);
+    fs.renameSync(`${file}.tmp`, file);
 }
+
+function saveSettings(s) {
+    writeAtomic(settingsFile(), JSON.stringify(s, null, 2));
+}
+
+// The download queue is kept in a file so it survives closing the app.
+const queueFile = () => path.join(app.getPath('userData'), 'queue.json');
 
 // ------------------------------------------------------------------ window
 function createWindow() {
@@ -107,6 +116,11 @@ function registerIpc() {
         return next;
     });
 
+    ipcMain.handle('queue:load', () => {
+        try { return JSON.parse(fs.readFileSync(queueFile(), 'utf8')); } catch { return []; }
+    });
+    ipcMain.handle('queue:save', (_e, groups) => writeAtomic(queueFile(), JSON.stringify(groups)));
+
     ipcMain.handle('folder:pick', async (_e, current) => {
         const res = await dialog.showOpenDialog(mainWindow, {
             title: 'Choose where to save downloads',
@@ -125,12 +139,10 @@ function registerIpc() {
 
     ipcMain.handle('tools:status', () => ytdlp.toolStatus());
     ipcMain.handle('playlist:load', (_e, { url, browser }) => ytdlp.loadPlaylist(url, { browser }));
-    ipcMain.handle('download:start', (_e, { items, options }) => {
-        ytdlp.downloadAll(items, options, (event) => {
-            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download:event', event);
-        });
-        return true;
-    });
+    // The window works through its queue one item at a time.
+    ipcMain.handle('download:item', (_e, { item, options }) => ytdlp.downloadItem(item, options, (event) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download:event', event);
+    }));
     ipcMain.handle('download:cancel', () => ytdlp.cancel());
 }
 

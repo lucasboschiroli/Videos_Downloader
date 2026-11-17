@@ -131,10 +131,28 @@ function run(args, onLine) {
     });
 }
 
+// yt-dlp's errors for the common cases, rewritten as advice.
+function friendlyError(msg) {
+    if (/Sign in to confirm you.re not a bot/i.test(msg)) {
+        return "YouTube wants to check you're not a bot. Pick your browser under \"Cookies from\" (where you're signed in to YouTube) and try again.";
+    }
+    if (/Sign in to confirm your age|age-restricted/i.test(msg)) {
+        return 'This video is age-restricted. Pick your browser under "Cookies from" (signed in to YouTube) and try again.';
+    }
+    if (/Private video|members-only|Join this channel/i.test(msg)) return 'This video is private or for channel members only.';
+    if (/Video unavailable|This video has been removed/i.test(msg)) return 'This video is unavailable or was removed.';
+    if (/Unsupported URL/i.test(msg)) return "This link isn't a supported video or playlist.";
+    if (/Could not copy .* cookie database|Failed to decrypt with DPAPI/i.test(msg)) {
+        return "Couldn't read the browser's cookies. Close that browser completely and try again, or pick another one.";
+    }
+    if (/Unable to download webpage|getaddrinfo|timed out|Connection reset/i.test(msg)) return 'Network problem: check your internet connection and try again.';
+    return msg;
+}
+
 function lastError(stderr) {
     const lines = stderr.split(/\r?\n/).filter((l) => l.startsWith('ERROR:'));
     const msg = (lines.pop() || stderr.trim().split(/\r?\n/).pop() || 'Unknown error').replace(/^ERROR:\s*/, '');
-    return msg.replace(/^\[[^\]]+\]\s*[\w-]+:\s*/, '');
+    return friendlyError(msg.replace(/^\[[^\]]+\]\s*[\w-]+:\s*/, ''));
 }
 
 const thumbFor = (e) =>
@@ -142,7 +160,10 @@ const thumbFor = (e) =>
     e.thumbnail ||
     (e.id ? `https://i.ytimg.com/vi/${e.id}/mqdefault.jpg` : null);
 
+const gdc = require('./gdc');
+
 async function loadPlaylist(url, { browser }) {
+    if (gdc.isGdc(url)) return gdc.resolve(url);
     const { code, stdout, stderr } = await run(['-J', '--flat-playlist', '--no-warnings', ...commonArgs(browser), url]);
     if (code !== 0) throw new Error(lastError(stderr));
     const info = JSON.parse(stdout);
@@ -228,88 +249,91 @@ const STAGES = [
     [/^\[Metadata\]/, 'Adding info'],
 ];
 
-async function downloadAll(items, options, emit) {
+// Where one queued item is saved: playlists go in their own (numbered) folder.
+function targetFor(item, options) {
+    const g = item.group || {};
+    let outDir = options.outDir;
+    if (options.subfolder && g.isPlaylist) outDir = path.join(outDir, safeName(g.title));
+    const width = Math.max(2, String(g.total || 1).length);
+    const prefix = options.number && g.isPlaylist ? `${String(item.index).padStart(width, '0')} - ` : '';
+    // Direct streams (GDC Vault) have no useful title of their own, so name them ourselves.
+    const name = item.mediaUrl ? safeName(item.title).replace(/%/g, '%%') + '.%(ext)s' : '%(title)s.%(ext)s';
+    return { outDir, template: path.join(outDir.replace(/%/g, '%%'), `${prefix.replace(/%/g, '%%')}${name}`) };
+}
+
+// Downloads one queued item. Resolves to 'ok' | 'skipped' | 'failed' | 'cancelled'.
+async function downloadItem(item, options, emit) {
     busy = true;
     cancelled = false;
-    let outDir = options.outDir;
-    if (options.subfolder && options.isPlaylist) outDir = path.join(outDir, safeName(options.playlistTitle));
+    const { outDir, template } = targetFor(item, options);
     fs.mkdirSync(outDir, { recursive: true });
+    let already = false;
+    let noSubs = false;
 
-    const width = Math.max(2, String(options.total || items.length).length);
-    let ok = 0, failed = 0, skipped = 0;
-    emit({ type: 'start', count: items.length, outDir });
+    emit({ type: 'item', key: item.key, status: 'starting', label: 'Starting', outDir });
 
-    for (let i = 0; i < items.length; i++) {
-        if (cancelled) break;
-        const item = items[i];
-        const prefix = options.number && options.isPlaylist ? `${String(item.index).padStart(width, '0')} - ` : '';
-        const template = path.join(outDir.replace(/%/g, '%%'), `${prefix}%(title)s.%(ext)s`);
-        let already = false;
-        let noSubs = false;
+    const wantSubs = !item.mediaUrl && subtitleArgs(options).length > 0;
+    const buildArgs = (withSubs) => [
+        '--newline', '--no-playlist', '--windows-filenames', '--no-overwrites', '--continue',
+        '--progress-template', 'download:VDP|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
+        '-o', template,
+        ...formatArgs(options.mode, options.quality),
+        ...(withSubs ? subtitleArgs(options) : []),
+        ...commonArgs(options.browser),
+        ...(item.referer ? ['--referer', item.referer] : []),
+        item.mediaUrl || item.url,
+    ];
+    let args = buildArgs(wantSubs);
 
-        emit({ type: 'item', key: item.key, status: 'starting', label: 'Starting', position: i + 1 });
-
-        const buildArgs = (withSubs) => [
-            '--newline', '--no-playlist', '--windows-filenames', '--no-overwrites', '--continue',
-            '--progress-template', 'download:VDP|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
-            '-o', template,
-            ...formatArgs(options.mode, options.quality),
-            ...(withSubs ? subtitleArgs(options) : []),
-            ...commonArgs(options.browser),
-            item.url,
-        ];
-        const wantSubs = subtitleArgs(options).length > 0;
-        let args = buildArgs(wantSubs);
-
-        const onLine = (line) => {
-            if (line.startsWith('VDP|')) {
-                const [, pct, speed, eta] = line.split('|');
-                const percent = parseFloat(pct) || 0;
-                emit({ type: 'progress', key: item.key, percent, speed: (speed || '').trim(), eta: (eta || '').trim() });
-                return;
-            }
-            if (/has already been downloaded/.test(line)) already = true;
-            if (/There are no subtitles for the requested languages/.test(line)) noSubs = true;
-            for (const [re, label] of STAGES) {
-                if (re.test(line)) emit({ type: 'item', key: item.key, status: 'processing', label });
-            }
-        };
-
-        // YouTube sometimes answers 403 Forbidden for a stream that works on
-        // the next try, so retry those a couple of times before giving up.
-        let code, stderr;
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            ({ code, stderr } = await run(args, onLine));
-            if (code === 0 || cancelled || attempt === 3) break;
-            // A subtitle that can't be fetched (YouTube rate-limits them with
-            // 429s) shouldn't cost you the video: get the video without them.
-            if (wantSubs && /subtitle/i.test(lastError(stderr))) {
-                args = buildArgs(false);
-                noSubs = true;
-                emit({ type: 'item', key: item.key, status: 'starting', label: 'Retrying without subtitles' });
-                continue;
-            }
-            if (!/HTTP Error 403/.test(stderr)) break;
-            emit({ type: 'item', key: item.key, status: 'starting', label: `Retrying (${attempt + 1}/3)` });
+    const onLine = (line) => {
+        if (line.startsWith('VDP|')) {
+            const [, pct, speed, eta] = line.split('|');
+            const percent = parseFloat(pct) || 0;
+            emit({ type: 'progress', key: item.key, percent, speed: (speed || '').trim(), eta: (eta || '').trim() });
+            return;
         }
+        if (/has already been downloaded/.test(line)) already = true;
+        if (/There are no subtitles for the requested languages/.test(line)) noSubs = true;
+        for (const [re, label] of STAGES) {
+            if (re.test(line)) emit({ type: 'item', key: item.key, status: 'processing', label });
+        }
+    };
 
-        if (cancelled) {
-            emit({ type: 'item', key: item.key, status: 'cancelled', label: 'Cancelled' });
-            break;
+    // YouTube sometimes answers 403 Forbidden for a stream that works on
+    // the next try, so retry those a couple of times before giving up.
+    let code, stderr;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        ({ code, stderr } = await run(args, onLine));
+        if (code === 0 || cancelled || attempt === 3) break;
+        // A subtitle that can't be fetched (YouTube rate-limits them with
+        // 429s) shouldn't cost you the video: get the video without them.
+        if (wantSubs && /subtitle/i.test(lastError(stderr))) {
+            args = buildArgs(false);
+            noSubs = true;
+            emit({ type: 'item', key: item.key, status: 'starting', label: 'Retrying without subtitles' });
+            continue;
         }
-        if (code === 0) {
-            if (already) skipped++; else ok++;
-            let label = already ? 'Already saved' : 'Done';
-            if (wantSubs && noSubs && !already) label = 'Done · no subtitles';
-            emit({ type: 'item', key: item.key, status: 'done', label });
-        } else {
-            failed++;
-            emit({ type: 'item', key: item.key, status: 'error', label: 'Failed', error: lastError(stderr) });
-        }
+        if (!/HTTP Error 403/.test(stderr)) break;
+        emit({ type: 'item', key: item.key, status: 'starting', label: `Retrying (${attempt + 1}/3)` });
     }
 
     busy = false;
-    emit({ type: 'finished', ok, failed, skipped, cancelled, outDir });
+    if (cancelled) {
+        emit({ type: 'item', key: item.key, status: 'cancelled', label: 'Cancelled' });
+        return 'cancelled';
+    }
+    if (code === 0) {
+        let label = already ? 'Already saved' : 'Done';
+        if (wantSubs && noSubs && !already) label = 'Done · no subtitles';
+        emit({ type: 'item', key: item.key, status: 'done', label, outDir });
+        return already ? 'skipped' : 'ok';
+    }
+    // Don't leave an empty playlist folder behind when nothing could be saved.
+    if (outDir !== options.outDir) {
+        try { fs.rmdirSync(outDir); } catch { /* not empty: other videos are in it */ }
+    }
+    emit({ type: 'item', key: item.key, status: 'error', label: 'Failed', error: lastError(stderr) });
+    return 'failed';
 }
 
 function cancel() {
@@ -321,4 +345,4 @@ function cancel() {
     }
 }
 
-module.exports = { toolStatus, loadPlaylist, downloadAll, cancel, selfUpdate, isBusy: () => busy };
+module.exports = { toolStatus, loadPlaylist, downloadItem, cancel, selfUpdate, isBusy: () => busy };

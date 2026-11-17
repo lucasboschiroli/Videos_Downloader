@@ -43,9 +43,9 @@ A simple yet powerful command-line tool to download videos from 1000+ websites i
    sudo apt install ffmpeg
    ```
 
-## Desktop App (playlists)
+## Desktop App
 
-An Electron desktop app (same style as my other apps) built on top of yt-dlp.
+An Electron desktop app (same style as my other apps) built on top of yt-dlp. It downloads from YouTube, GDC Vault and the 1000+ other sites yt-dlp supports.
 
 **Install it:** download `Videos-Downloader-Setup-x.x.x.exe` from the [latest release](https://github.com/lucasboschiroli/Videos_Downloader/releases/latest) and run it. yt-dlp and ffmpeg are included, so Python isn't needed, and the app updates itself when a new version is released.
 
@@ -54,16 +54,17 @@ An Electron desktop app (same style as my other apps) built on top of yt-dlp.
 npm install
 npm start
 ```
-After the first `npm install`, you can also double-click **`Videos Downloader.bat`**.
 
 **Use it:**
-1. Paste a YouTube **playlist** link (or a single video link) and press **Load**. Every video shows up with its thumbnail and length.
+1. Paste a **playlist** or **video** link and press **Add**. It joins the **queue** with every video's thumbnail and length. Add as many links as you like, even while downloads are running: each one is added below the others, and new videos are downloaded after the ones before them. Use the trash buttons to remove a video or a whole playlist, **Clear finished** to tidy up, or **Clear all**. The queue is kept when you close the app.
 2. Choose **Video · MP4** with a max quality, or **Audio · MP3** (with the cover image and info embedded).
 3. **Subtitles** are embedded in the MP4 as tracks you can turn on in your player (no separate `.srt` files). Choose the languages (default `en, pt`, which includes variants like `pt-BR`), or type `all`. Turn on **Auto-generated if missing** to use YouTube's automatic captions when a video has no real subtitles.
-4. Optionally pick a browser under **Cookies from** for age-restricted or private videos.
+4. Optionally pick a browser under **Cookies from** for age-restricted videos, or when YouTube asks to confirm you're not a bot.
 5. Untick anything you don't want, then press **Download**.
 
-By default, files go to `Videos\Videos Downloader`, with each playlist in its own folder and the files numbered in playlist order (`01 - Title.mp4`). Your choices are remembered between sessions. Files that already exist are skipped, so after cancelling or a failure you can run it again and it continues where it stopped. A video that fails (for example, a private one) is marked as failed, and the rest of the playlist still downloads.
+By default, files go to `Videos\Videos Downloader`, with each playlist in its own folder and the files numbered in playlist order (`01 - Title.mp4`). Your choices are remembered between sessions. Files that already exist are skipped, so after cancelling or a failure you can run it again and it continues where it stopped. A video that fails (for example, a private one) is marked as failed, and the rest of the queue still downloads.
+
+**GDC Vault:** paste a talk's page link (for example `https://gdcvault.com/play/1027160/...`). Free talks download with their real title and speaker. Members-only talks need a GDC Vault subscription, and the app tells you so.
 
 **Requirements:** yt-dlp (`pip install yt-dlp`) and ffmpeg (`winget install ffmpeg`). The badge in the top right of the app shows whether both were found. You can also put `yt-dlp.exe` and `ffmpeg.exe` in the `bin` folder, where the app prefers them over installed copies and bundles them into the installer.
 

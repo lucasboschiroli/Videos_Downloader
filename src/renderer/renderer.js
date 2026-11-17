@@ -2,9 +2,12 @@ const $ = (id) => document.getElementById(id);
 
 const state = {
     settings: null,
-    playlist: null,     // { title, channel, isPlaylist, items: [...] }
+    groups: [],         // one per added link: { id, source, title, channel, isPlaylist, total, items: [...] }
     downloading: false,
-    run: null,          // { count, done, current, outDir }
+    stopRequested: false,
+    run: null,          // { done, ok, failed, skipped, outDir }
+    loading: 0,         // links currently being read
+    nextKey: 1,
 };
 
 // ---------------------------------------------------------------- helpers
@@ -31,7 +34,7 @@ function el(tag, cls, text) {
 }
 
 function show(section) {
-    for (const id of ['emptyState', 'loadingState', 'errorState', 'playlist']) {
+    for (const id of ['emptyState', 'loadingState', 'errorState', 'queue']) {
         $(id).classList.toggle('hidden', id !== section);
     }
 }
@@ -126,6 +129,45 @@ async function initTools() {
     }
 }
 
+// ------------------------------------------------------------------ queue
+const TRASH = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+const ACTIVE = ['starting', 'downloading', 'processing'];
+const allItems = () => state.groups.flatMap((g) => g.items);
+const findItem = (key) => allItems().find((it) => it.key === key);
+const groupOf = (it) => state.groups.find((g) => g.items.includes(it));
+const isActive = (it) => ACTIVE.includes(it.status);
+const canQueue = (it) => it.checked && !it.unavailable && it.status !== 'done' && !isActive(it);
+
+// The queue survives closing the app (progress and errors are not kept).
+function saveQueue() {
+    try {
+        const slim = state.groups.map((g) => ({ ...g, items: g.items.map((it) => ({
+            key: it.key, index: it.index, id: it.id, url: it.url, mediaUrl: it.mediaUrl, referer: it.referer,
+            title: it.title, duration: it.duration, channel: it.channel, thumbnail: it.thumbnail,
+            unavailable: it.unavailable, checked: it.checked, done: it.status === 'done',
+        })) }));
+        window.api.saveQueue(slim);
+    } catch { /* the queue just won't be remembered */ }
+}
+
+async function restoreQueue() {
+    try {
+        const groups = await window.api.loadQueue();
+        for (const g of groups) {
+            for (const it of g.items) {
+                Object.assign(it, it.unavailable ? { status: 'unavailable', label: 'Unavailable' }
+                    : it.done ? { status: 'done', label: 'Done' } : { status: 'waiting', label: 'Waiting' });
+                delete it.done;
+                state.nextKey = Math.max(state.nextKey, Number(it.key) + 1);
+            }
+            state.nextKey = Math.max(state.nextKey, Number(g.id) + 1);
+        }
+        state.groups = groups.filter((g) => g.items.length);
+    } catch {
+        state.groups = [];
+    }
+}
+
 // ------------------------------------------------------------------- load
 $('pasteBtn').onclick = async () => {
     try {
@@ -134,42 +176,111 @@ $('pasteBtn').onclick = async () => {
     } catch { /* clipboard blocked */ }
 };
 
+function cleanError(err) {
+    return String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+}
+
+function paintLoading() {
+    const empty = !state.groups.length;
+    if (empty) {
+        show(state.loading ? 'loadingState' : 'emptyState');
+    } else {
+        show('queue');
+        $('pendingLoad').classList.toggle('hidden', !state.loading);
+        $('pendingText').textContent = state.loading > 1 ? `Reading ${state.loading} links…` : 'Reading link…';
+    }
+}
+
+function showLoadError(message) {
+    if (!state.groups.length) {
+        $('errorText').textContent = message;
+        show('errorState');
+    } else {
+        $('loadErrorText').textContent = `Couldn't add that link: ${message}`;
+        $('loadError').classList.remove('hidden');
+    }
+}
+$('loadErrorClose').onclick = () => $('loadError').classList.add('hidden');
+
 $('linkForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = $('linkInput').value.trim();
-    if (!url || state.downloading) return;
-    $('loadBtn').disabled = true;
-    show('loadingState');
+    if (!url) return;
+    $('loadError').classList.add('hidden');
+
+    if (state.groups.some((g) => g.source === url)) {
+        showLoadError('it is already in the queue.');
+        return;
+    }
+
+    $('linkInput').value = '';
+    state.loading++;
+    paintLoading();
     try {
         const pl = await window.api.loadPlaylist(url, state.settings.browser);
-        pl.items = pl.items.map((it, i) => ({
-            ...it, key: String(i), index: i + 1, checked: !it.unavailable,
-            status: it.unavailable ? 'unavailable' : 'waiting', label: it.unavailable ? 'Unavailable' : 'Waiting',
+        const group = {
+            id: String(state.nextKey++), source: url, title: pl.title, channel: pl.channel,
+            isPlaylist: pl.isPlaylist, total: pl.items.length, items: [],
+        };
+        group.items = pl.items.map((it, i) => ({
+            ...it, key: String(state.nextKey++), index: i + 1, checked: !it.unavailable,
+            // Added while downloading: it joins the running queue straight away.
+            status: it.unavailable ? 'unavailable' : state.downloading ? 'queued' : 'waiting',
+            label: it.unavailable ? 'Unavailable' : state.downloading ? 'Queued' : 'Waiting',
         }));
-        state.playlist = pl;
-        renderPlaylist();
-        show('playlist');
+        state.groups.push(group);
+        saveQueue();
+        renderQueue();
+        $(`group-${group.id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     } catch (err) {
-        $('errorText').textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-        show('errorState');
+        if (!url.includes(' ')) $('linkInput').value = $('linkInput').value || url;
+        showLoadError(cleanError(err));
     } finally {
-        $('loadBtn').disabled = false;
+        state.loading--;
+        paintLoading();
     }
 });
 
-// --------------------------------------------------------------- playlist
-function renderPlaylist() {
-    const pl = state.playlist;
-    $('plTitle').textContent = pl.title;
-    const total = pl.items.reduce((s, it) => s + (it.duration || 0), 0);
-    const bits = [pl.channel, `${pl.items.length} ${pl.items.length === 1 ? 'video' : 'videos'}`, fmtTotal(total)].filter(Boolean);
-    $('plMeta').textContent = bits.join('  ·  ');
-    $('overall').classList.add('hidden');
-
-    const list = $('items');
-    list.innerHTML = '';
-    for (const it of pl.items) list.appendChild(renderItem(it));
+// ----------------------------------------------------------------- render
+function renderQueue() {
+    paintLoading();
+    const box = $('groups');
+    box.innerHTML = '';
+    for (const g of state.groups) box.appendChild(renderGroup(g));
     updateSelection();
+}
+
+function renderGroup(g) {
+    const card = el('section', 'group card');
+    card.id = `group-${g.id}`;
+
+    const head = el('div', 'group-head');
+    const check = el('label', 'group-check');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.title = 'Select or unselect every video in this group';
+    box.onchange = () => {
+        for (const it of g.items) if (!it.unavailable && it.status !== 'done' && !isActive(it)) setChecked(it, box.checked);
+        saveQueue();
+        updateSelection();
+    };
+    check.appendChild(box);
+
+    const title = el('div', 'group-title');
+    const total = g.items.reduce((s, it) => s + (it.duration || 0), 0);
+    title.append(el('h3', null, g.title),
+        el('p', null, [g.channel, `${g.items.length} ${g.items.length === 1 ? 'video' : 'videos'}`, fmtTotal(total)].filter(Boolean).join('  ·  ')));
+
+    const trash = el('button', 'remove-btn');
+    trash.innerHTML = TRASH;
+    trash.title = 'Remove this group from the queue';
+    trash.onclick = () => removeGroup(g);
+
+    head.append(check, title, trash);
+    const list = el('ol', 'items');
+    for (const it of g.items) list.appendChild(renderItem(it));
+    card.append(head, list);
+    return card;
 }
 
 function renderItem(it) {
@@ -179,9 +290,7 @@ function renderItem(it) {
     const check = el('label', 'item-check');
     const box = el('input');
     box.type = 'checkbox';
-    box.checked = it.checked;
-    box.disabled = !!it.unavailable;
-    box.onchange = () => { it.checked = box.checked; updateSelection(); };
+    box.onchange = () => { setChecked(it, box.checked); saveQueue(); updateSelection(); };
     check.appendChild(box);
 
     const idx = el('span', 'item-index', it.index);
@@ -199,31 +308,41 @@ function renderItem(it) {
 
     const body = el('div', 'item-body');
     const title = el('div', 'item-title', it.title);
-    title.title = 'Open on YouTube';
+    title.title = 'Open in your browser';
     title.onclick = () => window.api.openLink(it.url);
     const sub = el('div', 'item-sub', it.channel || '');
     const bar = el('div', 'bar hidden');
     bar.appendChild(el('div', 'bar-fill'));
     body.append(title, sub, bar);
 
-    const status = el('span', `status ${statusClass(it.status)}`, it.label);
+    const status = el('span', 'status');
+    const trash = el('button', 'remove-btn');
+    trash.innerHTML = TRASH;
+    trash.title = 'Remove from the queue';
+    trash.onclick = () => removeItem(it);
 
-    li.append(check, idx, thumb, body, status);
+    li.append(check, idx, thumb, body, status, trash);
     paintItem(it, li);
     return li;
 }
 
 function statusClass(s) {
-    return { starting: 'active', downloading: 'active', processing: 'active', done: 'done', error: 'error', cancelled: 'cancelled' }[s] || '';
+    return { starting: 'active', downloading: 'active', processing: 'active', queued: 'queued', done: 'done', error: 'error', cancelled: 'cancelled' }[s] || '';
 }
 
 function paintItem(it, li = $(`item-${it.key}`)) {
     if (!li) return;
-    li.classList.toggle('unchecked', !it.checked);
-    li.classList.toggle('active', ['starting', 'downloading', 'processing'].includes(it.status));
+    const active = isActive(it);
+    li.classList.toggle('unchecked', !it.checked && it.status !== 'done');
+    li.classList.toggle('active', active);
     const status = li.querySelector('.status');
     status.className = `status ${statusClass(it.status)}`;
     status.textContent = it.label;
+
+    const box = li.querySelector('.item-check input');
+    box.checked = it.checked;
+    box.disabled = !!it.unavailable || active || it.status === 'done';
+    li.querySelector('.remove-btn').disabled = active;
 
     const sub = li.querySelector('.item-sub');
     if (it.status === 'error') {
@@ -238,134 +357,194 @@ function paintItem(it, li = $(`item-${it.key}`)) {
     }
 
     const bar = li.querySelector('.bar');
-    const showBar = ['downloading', 'processing'].includes(it.status);
-    bar.classList.toggle('hidden', !showBar);
+    bar.classList.toggle('hidden', !['downloading', 'processing'].includes(it.status));
     bar.firstChild.style.width = `${it.status === 'processing' ? 100 : (it.percent || 0)}%`;
 }
 
-function selectedItems() {
-    return state.playlist ? state.playlist.items.filter((it) => it.checked && !it.unavailable) : [];
+function paintGroupHead(g) {
+    const card = $(`group-${g.id}`);
+    if (!card) return;
+    const pickable = g.items.filter((it) => !it.unavailable && it.status !== 'done');
+    const box = card.querySelector('.group-check input');
+    box.checked = pickable.length > 0 && pickable.every((it) => it.checked);
+    box.indeterminate = !box.checked && pickable.some((it) => it.checked);
+    box.disabled = !pickable.length;
+    card.querySelector('.group-head .remove-btn').disabled = g.items.some(isActive);
 }
+
+// Ticking an item while downloading adds it to the running queue; unticking
+// a queued one takes it back out.
+function setChecked(it, on) {
+    it.checked = on;
+    if (state.downloading) {
+        if (on && canQueue(it)) Object.assign(it, { status: 'queued', label: 'Queued' });
+        if (!on && it.status === 'queued') Object.assign(it, { status: 'waiting', label: 'Waiting' });
+    }
+    paintItem(it);
+}
+
+function removeItem(it) {
+    if (isActive(it)) return;
+    const g = groupOf(it);
+    if (!g) return;
+    g.items = g.items.filter((x) => x !== it);
+    if (!g.items.length) state.groups = state.groups.filter((x) => x !== g);
+    saveQueue();
+    renderQueue();
+}
+
+function removeGroup(g) {
+    if (g.items.some(isActive)) return;
+    state.groups = state.groups.filter((x) => x !== g);
+    saveQueue();
+    renderQueue();
+}
+
+$('clearDoneBtn').onclick = () => {
+    for (const g of state.groups) g.items = g.items.filter((it) => it.status !== 'done');
+    state.groups = state.groups.filter((g) => g.items.length);
+    saveQueue();
+    renderQueue();
+};
+
+$('clearAllBtn').onclick = () => {
+    if (state.downloading) return;
+    if (allItems().length > 3 && !confirm(`Remove all ${allItems().length} videos from the queue?`)) return;
+    state.groups = [];
+    $('overall').classList.add('hidden');
+    saveQueue();
+    renderQueue();
+};
 
 function updateSelection() {
-    const sel = selectedItems().length;
-    const avail = state.playlist.items.filter((it) => !it.unavailable).length;
-    $('selectAll').checked = sel === avail && avail > 0;
-    $('downloadBtn').textContent = sel === avail ? `Download all (${sel})` : `Download ${sel} selected`;
-    $('downloadBtn').disabled = sel === 0 || state.downloading;
+    const items = allItems();
+    const pending = items.filter(canQueue).length;
+    const done = items.filter((it) => it.status === 'done').length;
+    const total = items.reduce((s, it) => s + (it.duration || 0), 0);
+    $('queueMeta').textContent = [
+        `${items.length} ${items.length === 1 ? 'video' : 'videos'}`,
+        done ? `${done} downloaded` : '',
+        fmtTotal(total),
+    ].filter(Boolean).join('  ·  ');
+    $('downloadBtn').textContent = pending ? `Download ${pending}` : 'Nothing to download';
+    $('downloadBtn').disabled = !pending || state.downloading;
+    $('clearDoneBtn').disabled = !done;
+    $('clearAllBtn').disabled = state.downloading || !items.length;
+    for (const g of state.groups) paintGroupHead(g);
 }
-
-$('selectAll').onchange = (e) => {
-    if (!state.playlist || state.downloading) return;
-    for (const it of state.playlist.items) {
-        if (it.unavailable) continue;
-        it.checked = e.target.checked;
-        const box = $(`item-${it.key}`).querySelector('input');
-        box.checked = it.checked;
-        paintItem(it);
-    }
-    updateSelection();
-};
 
 // --------------------------------------------------------------- download
 function setDownloading(on) {
     state.downloading = on;
     $('cancelBtn').classList.toggle('hidden', !on);
     $('downloadBtn').classList.toggle('hidden', on);
-    $('loadBtn').disabled = on;
-    $('selectAll').disabled = on;
-    document.querySelectorAll('.item-check input').forEach((b) => { b.disabled = on || b.closest('.item') && !!findItem(b.closest('.item').id.slice(5))?.unavailable; });
     document.querySelectorAll('.seg, #browserSelect, #folderBtn, #subfolderChk, #numberChk, .subs-row')
         .forEach((x) => { x.style.pointerEvents = on ? 'none' : ''; x.style.opacity = on ? '0.55' : ''; });
-    if (!on) { paintMode(); updateSelection(); }
-}
-
-function findItem(key) {
-    return state.playlist && state.playlist.items.find((it) => it.key === key);
+    if (!on) paintMode();
+    updateSelection();
 }
 
 function paintOverall() {
     const r = state.run;
-    if (!r) return;
-    const cur = r.current ? findItem(r.current) : null;
+    if (!r || r.finished) return;
+    const cur = allItems().find(isActive);
+    const left = allItems().filter((it) => it.status === 'queued').length + (cur ? 1 : 0);
+    const count = r.done + left;
     const partial = cur && cur.status === 'downloading' ? (cur.percent || 0) / 100 : (cur && cur.status === 'processing' ? 0.99 : 0);
-    const pct = Math.min(100, ((r.done + partial) / r.count) * 100);
-    $('overallFill').style.width = `${pct}%`;
-    if (!r.finished) $('overallText').textContent = `Downloading ${Math.min(r.done + 1, r.count)} of ${r.count}…`;
+    $('overallFill').style.width = `${count ? Math.min(100, ((r.done + partial) / count) * 100) : 100}%`;
+    $('overallText').textContent = `Downloading ${Math.min(r.done + 1, count)} of ${count}…`;
+}
+
+function downloadOptions() {
+    const s = state.settings;
+    return {
+        mode: s.mode, quality: s.quality, browser: s.browser, outDir: s.outDir,
+        subfolder: s.subfolder, number: s.number,
+        subs: s.subs, subLangs: s.subLangs, autoSubs: s.autoSubs,
+    };
 }
 
 $('downloadBtn').onclick = async () => {
-    const items = selectedItems();
-    if (!items.length || state.downloading) return;
-    for (const it of items) {
-        Object.assign(it, { status: 'waiting', label: 'Waiting', percent: 0, error: null });
+    if (state.downloading) return;
+    const todo = allItems().filter(canQueue);
+    if (!todo.length) return;
+    for (const it of todo) {
+        Object.assign(it, { status: 'queued', label: 'Queued', percent: 0, error: null });
         paintItem(it);
     }
-    state.run = { count: items.length, done: 0, current: null, finished: false };
+    state.run = { done: 0, ok: 0, failed: 0, skipped: 0, finished: false, outDir: null };
+    state.stopRequested = false;
     $('overall').classList.remove('hidden');
     $('overallOpen').classList.add('hidden');
     setDownloading(true);
     paintOverall();
 
-    const s = state.settings;
-    await window.api.startDownload(
-        items.map((it) => ({ key: it.key, index: it.index, url: it.url })),
-        {
-            mode: s.mode, quality: s.quality, browser: s.browser, outDir: s.outDir,
-            subfolder: s.subfolder, number: s.number,
-            subs: s.subs, subLangs: s.subLangs, autoSubs: s.autoSubs,
-            isPlaylist: state.playlist.isPlaylist, playlistTitle: state.playlist.title,
-            total: state.playlist.items.length,
-        },
-    );
+    const options = downloadOptions();
+    // Work through the queue in order; links added meanwhile are picked up too.
+    for (;;) {
+        if (state.stopRequested) break;
+        const it = allItems().find((x) => x.status === 'queued');
+        if (!it) break;
+        const g = groupOf(it);
+        const result = await window.api.downloadItem({
+            key: it.key, index: it.index, url: it.url, mediaUrl: it.mediaUrl, referer: it.referer, title: it.title,
+            group: { isPlaylist: g.isPlaylist, title: g.title, total: g.total },
+        }, options);
+        if (result === 'cancelled') break;
+        state.run[result === 'ok' ? 'ok' : result === 'skipped' ? 'skipped' : 'failed']++;
+        state.run.done++;
+        saveQueue();
+    }
+
+    const r = state.run;
+    r.finished = true;
+    const cancelled = state.stopRequested;
+    for (const it of allItems()) if (it.status === 'queued') Object.assign(it, { status: 'waiting', label: 'Waiting' });
+    const parts = [`${r.ok} downloaded`];
+    if (r.skipped) parts.push(`${r.skipped} already saved`);
+    if (r.failed) parts.push(`${r.failed} failed`);
+    $('overallText').textContent = `${cancelled ? 'Stopped' : 'Finished'} — ${parts.join(', ')}`;
+    if (!cancelled) $('overallFill').style.width = '100%';
+    $('overallOpen').classList.toggle('hidden', !r.outDir);
+    setDownloading(false);
+    for (const it of allItems()) paintItem(it);
+    saveQueue();
 };
 
 $('cancelBtn').onclick = () => {
     if (!state.downloading) return;
-    $('overallText').textContent = 'Cancelling…';
+    state.stopRequested = true;
+    $('overallText').textContent = 'Stopping…';
     window.api.cancelDownload();
 };
 
-$('overallOpen').onclick = () => state.run && window.api.openFolder(state.run.outDir);
+$('overallOpen').onclick = () => state.run && state.run.outDir && window.api.openFolder(state.run.outDir);
 
 window.api.onDownloadEvent((ev) => {
-    const r = state.run;
-    if (!r) return;
-    if (ev.type === 'start') {
-        r.outDir = ev.outDir;
-        return;
-    }
-    if (ev.type === 'finished') {
-        r.finished = true;
-        const parts = [`${ev.ok} downloaded`];
-        if (ev.skipped) parts.push(`${ev.skipped} already saved`);
-        if (ev.failed) parts.push(`${ev.failed} failed`);
-        $('overallText').textContent = `${ev.cancelled ? 'Cancelled' : 'Finished'} — ${parts.join(', ')}`;
-        if (!ev.cancelled) $('overallFill').style.width = '100%';
-        $('overallOpen').classList.remove('hidden');
-        setDownloading(false);
-        return;
-    }
-
     const it = findItem(ev.key);
     if (!it) return;
+    if (ev.outDir && state.run && !state.run.outDir) state.run.outDir = ev.outDir;
     if (ev.type === 'progress') {
         Object.assign(it, { status: 'downloading', label: `${ev.percent.toFixed(0)}%`, percent: ev.percent, speed: ev.speed, eta: ev.eta });
     } else if (ev.type === 'item') {
         it.status = ev.status;
         it.label = ev.label;
         if (ev.error) it.error = ev.error;
-        if (ev.status === 'starting') {
-            r.current = it.key;
-            $(`item-${it.key}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
-        if (['done', 'error'].includes(ev.status)) r.done++;
+        if (ev.status === 'starting') $(`item-${it.key}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
     paintItem(it);
+    if (ev.type === 'item') {
+        const g = groupOf(it);
+        if (g) paintGroupHead(g);
+        if (!isActive(it)) updateSelection();
+    }
     paintOverall();
 });
 
 // ------------------------------------------------------------------- boot
-initOptions();
+initOptions().then(async () => {
+    await restoreQueue();
+    if (state.groups.length) renderQueue();
+});
 initTools();
 $('linkInput').focus();
