@@ -158,7 +158,7 @@ This tool is for personal use only. Please respect copyright laws and the terms 
 
 ## License
 
-This project is open source and available under the MIT License.
+© 2025 Lucas Salomão Boschiroli. All rights reserved. Free to use for personal, non-commercial purposes; the code may not be copied, modified, redistributed or sold without permission. See [LICENSE](LICENSE).
 
 ## Credits
 

@@ -3,7 +3,7 @@
   "version": "1.1.0",
   "description": "Videos Downloader - download YouTube playlists and videos as MP4 or MP3",
   "author": "Lucas Salomão Boschiroli",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
@@ -44,7 +44,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "Videos-Downloader-Setup-${version}.${ext}"
+      "artifactName": "Videos-Downloader-Setup-${version}.${ext}",
+      "license": "LICENSE"
     },
     "publish": {
       "provider": "github",
