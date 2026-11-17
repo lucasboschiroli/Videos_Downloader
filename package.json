@@ -7,7 +7,8 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win --publish never"
+    "dist": "electron-builder --win --publish never",
+    "release": "electron-builder --win --publish always"
   },
   "devDependencies": {
     "electron": "^44.11.3",
@@ -22,6 +23,7 @@
     },
     "files": [
       "src/**/*",
+      "build/icon.png",
       "package.json"
     ],
     "extraResources": [
@@ -34,16 +36,27 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "artifactName": "Videos-Downloader-Setup-${version}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "lucasboschiroli",
+      "repo": "Videos_Downloader",
+      "releaseType": "draft"
     }
   },
   "allowScripts": {
     "electron@44.11.3": true
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

@@ -47,7 +47,9 @@ A simple yet powerful command-line tool to download videos from 1000+ websites i
 
 An Electron desktop app (same style as my other apps) built on top of yt-dlp.
 
-**Run it:**
+**Install it:** download `Videos-Downloader-Setup-x.x.x.exe` from the [latest release](https://github.com/lucasboschiroli/Videos_Downloader/releases/latest) and run it. yt-dlp and ffmpeg are included, so Python isn't needed, and the app updates itself when a new version is released.
+
+**Run it from source:**
 ```bash
 npm install
 npm start
@@ -69,6 +71,11 @@ By default, files go to `Videos\Videos Downloader`, with each playlist in its ow
 npm run dist
 ```
 The installer is created in `dist/`.
+
+**Publish a new version:**
+1. Raise `"version"` in `package.json` (for example, 1.0.0 → 1.0.1) and commit.
+2. `git tag v1.0.1 && git push origin main --tags`
+3. GitHub Actions (`.github/workflows/release.yml`) bundles the latest yt-dlp and ffmpeg, builds the installer and publishes the release. Installed apps pick it up automatically.
 
 ## Command Line Usage
 

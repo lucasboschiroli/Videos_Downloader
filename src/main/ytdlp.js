@@ -59,9 +59,20 @@ function resolveYtdlp() {
 }
 
 function ffmpegPath() {
-    const bundled = path.join(binDir(), exe('ffmpeg'));
-    if (fs.existsSync(bundled)) return bundled;
+    // Bundled: hand yt-dlp the folder so it finds ffprobe next to ffmpeg.
+    if (fs.existsSync(path.join(binDir(), exe('ffmpeg')))) return binDir();
     return onPath('ffmpeg');
+}
+
+// YouTube changes often and old yt-dlp versions stop working, so the bundled
+// copy updates itself in the background on start. Installed copies on PATH or
+// in Python are left alone; those are the user's to manage.
+function selfUpdate() {
+    const y = resolveYtdlp();
+    if (!y || y.label !== 'bundled yt-dlp') return;
+    const child = spawn(y.cmd, ['-U'], { windowsHide: true, stdio: 'ignore' });
+    child.on('close', () => { resolved = null; });
+    child.on('error', () => {});
 }
 
 // YouTube needs a JavaScript runtime to solve its player challenges.
@@ -269,4 +280,4 @@ function cancel() {
     }
 }
 
-module.exports = { toolStatus, loadPlaylist, downloadAll, cancel, isBusy: () => busy };
+module.exports = { toolStatus, loadPlaylist, downloadAll, cancel, selfUpdate, isBusy: () => busy };

@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron')
 const path = require('path');
 const fs = require('fs');
 const ytdlp = require('./ytdlp');
+const updater = require('./updater');
 
 let mainWindow = null;
 
@@ -134,6 +135,8 @@ app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
     registerIpc();
     createWindow();
+    updater.init(() => mainWindow);
+    if (app.isPackaged) ytdlp.selfUpdate();
 });
 
 app.on('window-all-closed', () => app.quit());
