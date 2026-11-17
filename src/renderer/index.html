@@ -67,6 +67,15 @@
                     <button id="openFolderBtn" class="ghost-btn small">Open</button>
                 </div>
             </div>
+            <div class="opt opt-wide" id="subsOpt">
+                <span class="opt-label">Subtitles <em class="opt-hint">embedded in the video</em></span>
+                <div class="subs-row">
+                    <label class="toggle"><input type="checkbox" id="subsChk"><span></span>Include subtitles</label>
+                    <input id="subLangsInput" class="pill-input" type="text" spellcheck="false"
+                           placeholder="en, pt" title="Language codes, separated by commas (e.g. en, pt, es). Type all for every language.">
+                    <label class="toggle" title="Use YouTube's automatic captions when a video has no real subtitles in these languages"><input type="checkbox" id="autoSubsChk"><span></span>Auto-generated if missing</label>
+                </div>
+            </div>
             <div class="opt opt-wide toggles">
                 <label class="toggle"><input type="checkbox" id="subfolderChk"><span></span>Own folder per playlist</label>
                 <label class="toggle"><input type="checkbox" id="numberChk"><span></span>Number files in playlist order</label>

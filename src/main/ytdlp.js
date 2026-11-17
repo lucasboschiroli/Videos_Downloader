@@ -196,7 +196,32 @@ function formatArgs(mode, quality) {
     return ['-f', 'bv*+ba/b', '-S', sort, '--merge-output-format', 'mp4', '--embed-metadata'];
 }
 
+// "en, pt" -> each language plus its common regional variants (pt-BR, en-US…),
+// but not YouTube's machine translations of auto captions (pt-en, en-de…),
+// which would add dozens of tracks. yt-dlp matches case-insensitively, so
+// regions are listed explicitly rather than matched as "two capitals".
+// Never the live chat replay either.
+const REGIONS = 'BR|PT|US|GB|419|MX|CA|AU|IN|IE|NZ|ZA|Hans|Hant|TW|HK|CN';
+function subLangPattern(langs) {
+    const list = String(langs || '').split(/[\s,;]+/).map((l) => l.replace(/[^\w-]/g, '')).filter(Boolean);
+    if (!list.length || list.some((l) => l.toLowerCase() === 'all')) return 'all,-live_chat';
+    return [...list.map((l) => (l.includes('-') ? l : `${l}(-(${REGIONS}))?`)), '-live_chat'].join(',');
+}
+
+// Subtitles go inside the MP4 as tracks you can switch on in the player.
+// Only --embed-subs (no --write-subs), so yt-dlp removes the loose subtitle
+// files once they're embedded.
+function subtitleArgs(options) {
+    if (options.mode === 'audio' || !options.subs) return [];
+    const args = ['--embed-subs', '--sub-langs', subLangPattern(options.subLangs)];
+    if (options.autoSubs) args.push('--write-auto-subs');
+    return args;
+}
+
 const STAGES = [
+    [/^\[info\] Writing video subtitles/, 'Getting subtitles'],
+    [/^\[SubtitlesConvertor\]/, 'Converting subtitles'],
+    [/^\[EmbedSubtitle\]/, 'Adding subtitles'],
     [/^\[Merger\]/, 'Merging'],
     [/^\[ExtractAudio\]/, 'Converting to MP3'],
     [/^\[(EmbedThumbnail|ThumbnailsConvertor)\]/, 'Adding cover'],
@@ -220,17 +245,21 @@ async function downloadAll(items, options, emit) {
         const prefix = options.number && options.isPlaylist ? `${String(item.index).padStart(width, '0')} - ` : '';
         const template = path.join(outDir.replace(/%/g, '%%'), `${prefix}%(title)s.%(ext)s`);
         let already = false;
+        let noSubs = false;
 
         emit({ type: 'item', key: item.key, status: 'starting', label: 'Starting', position: i + 1 });
 
-        const args = [
+        const buildArgs = (withSubs) => [
             '--newline', '--no-playlist', '--windows-filenames', '--no-overwrites', '--continue',
             '--progress-template', 'download:VDP|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
             '-o', template,
             ...formatArgs(options.mode, options.quality),
+            ...(withSubs ? subtitleArgs(options) : []),
             ...commonArgs(options.browser),
             item.url,
         ];
+        const wantSubs = subtitleArgs(options).length > 0;
+        let args = buildArgs(wantSubs);
 
         const onLine = (line) => {
             if (line.startsWith('VDP|')) {
@@ -240,6 +269,7 @@ async function downloadAll(items, options, emit) {
                 return;
             }
             if (/has already been downloaded/.test(line)) already = true;
+            if (/There are no subtitles for the requested languages/.test(line)) noSubs = true;
             for (const [re, label] of STAGES) {
                 if (re.test(line)) emit({ type: 'item', key: item.key, status: 'processing', label });
             }
@@ -250,7 +280,16 @@ async function downloadAll(items, options, emit) {
         let code, stderr;
         for (let attempt = 1; attempt <= 3; attempt++) {
             ({ code, stderr } = await run(args, onLine));
-            if (code === 0 || cancelled || !/HTTP Error 403/.test(stderr) || attempt === 3) break;
+            if (code === 0 || cancelled || attempt === 3) break;
+            // A subtitle that can't be fetched (YouTube rate-limits them with
+            // 429s) shouldn't cost you the video: get the video without them.
+            if (wantSubs && /subtitle/i.test(lastError(stderr))) {
+                args = buildArgs(false);
+                noSubs = true;
+                emit({ type: 'item', key: item.key, status: 'starting', label: 'Retrying without subtitles' });
+                continue;
+            }
+            if (!/HTTP Error 403/.test(stderr)) break;
             emit({ type: 'item', key: item.key, status: 'starting', label: `Retrying (${attempt + 1}/3)` });
         }
 
@@ -260,7 +299,9 @@ async function downloadAll(items, options, emit) {
         }
         if (code === 0) {
             if (already) skipped++; else ok++;
-            emit({ type: 'item', key: item.key, status: 'done', label: already ? 'Already saved' : 'Done' });
+            let label = already ? 'Already saved' : 'Done';
+            if (wantSubs && noSubs && !already) label = 'Done · no subtitles';
+            emit({ type: 'item', key: item.key, status: 'done', label });
         } else {
             failed++;
             emit({ type: 'item', key: item.key, status: 'error', label: 'Failed', error: lastError(stderr) });

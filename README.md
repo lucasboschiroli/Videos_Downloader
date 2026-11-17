@@ -59,8 +59,9 @@ After the first `npm install`, you can also double-click **`Videos Downloader.ba
 **Use it:**
 1. Paste a YouTube **playlist** link (or a single video link) and press **Load**. Every video shows up with its thumbnail and length.
 2. Choose **Video · MP4** with a max quality, or **Audio · MP3** (with the cover image and info embedded).
-3. Optionally pick a browser under **Cookies from** for age-restricted or private videos.
-4. Untick anything you don't want, then press **Download**.
+3. **Subtitles** are embedded in the MP4 as tracks you can turn on in your player (no separate `.srt` files). Choose the languages (default `en, pt`, which includes variants like `pt-BR`), or type `all`. Turn on **Auto-generated if missing** to use YouTube's automatic captions when a video has no real subtitles.
+4. Optionally pick a browser under **Cookies from** for age-restricted or private videos.
+5. Untick anything you don't want, then press **Download**.
 
 By default, files go to `Videos\Videos Downloader`, with each playlist in its own folder and the files numbered in playlist order (`01 - Title.mp4`). Your choices are remembered between sessions. Files that already exist are skipped, so after cancelling or a failure you can run it again and it continues where it stopped. A video that fails (for example, a private one) is marked as failed, and the rest of the playlist still downloads.
 

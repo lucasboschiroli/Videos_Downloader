@@ -15,6 +15,9 @@ const defaultSettings = () => ({
     browser: 'none',
     subfolder: true,
     number: true,
+    subs: true,
+    subLangs: 'en, pt',
+    autoSubs: false,
 });
 
 function loadSettings() {

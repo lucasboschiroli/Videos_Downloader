@@ -122,6 +122,16 @@ main { flex: 1; overflow-y: auto; padding: 2.4rem 4rem 4rem; }
 }
 .folder-path:hover { border-color: var(--accent); }
 .toggles { flex-direction: row; align-items: center; gap: 2.4rem; }
+.opt-hint { font-style: normal; font-weight: 500; text-transform: none; letter-spacing: 0; color: #a2a4a8; margin-left: 0.4rem; }
+.subs-row { display: flex; align-items: center; gap: 2rem; flex-wrap: wrap; }
+.pill-input {
+    width: 150px; border: 1.5px solid #d6d6d8; border-radius: 20px; background: #fff;
+    padding: 0.6rem 1.4rem; font-size: 1.25rem; font-weight: 600; color: var(--gray); transition: border-color 0.15s;
+}
+.pill-input:focus { outline: none; border-color: var(--accent); }
+.subs-off .pill-input, .subs-off .toggle:last-child { opacity: 0.4; pointer-events: none; }
+#subsOpt { flex-basis: 100%; }
+#subsOpt.disabled { opacity: 0.4; pointer-events: none; }
 
 .toggle { display: inline-flex; align-items: center; gap: 0.8rem; font-size: 1.3rem; color: var(--gray); cursor: pointer; user-select: none; }
 .toggle input { display: none; }

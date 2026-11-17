@@ -66,7 +66,11 @@ function bindSeg(segId, key, onChange) {
 }
 
 function paintMode() {
-    $('qualitySeg').classList.toggle('disabled', state.settings.mode === 'audio');
+    const audio = state.settings.mode === 'audio';
+    $('qualitySeg').classList.toggle('disabled', audio);
+    $('subsOpt').classList.toggle('disabled', audio);
+    $('subsOpt').title = audio ? 'Subtitles are only added to videos' : '';
+    document.querySelector('.subs-row').classList.toggle('subs-off', !state.settings.subs);
 }
 
 function paintFolder() {
@@ -87,6 +91,16 @@ async function initOptions() {
     $('subfolderChk').onchange = (e) => saveSetting({ subfolder: e.target.checked });
     $('numberChk').checked = state.settings.number;
     $('numberChk').onchange = (e) => saveSetting({ number: e.target.checked });
+    $('subsChk').checked = state.settings.subs;
+    $('subsChk').onchange = (e) => { saveSetting({ subs: e.target.checked }); paintMode(); };
+    $('subLangsInput').value = state.settings.subLangs;
+    $('subLangsInput').onchange = (e) => {
+        const v = e.target.value.trim() || 'en';
+        e.target.value = v;
+        saveSetting({ subLangs: v });
+    };
+    $('autoSubsChk').checked = state.settings.autoSubs;
+    $('autoSubsChk').onchange = (e) => saveSetting({ autoSubs: e.target.checked });
 
     $('folderBtn').onclick = async () => {
         const dir = await window.api.pickFolder(state.settings.outDir);
@@ -261,7 +275,7 @@ function setDownloading(on) {
     $('loadBtn').disabled = on;
     $('selectAll').disabled = on;
     document.querySelectorAll('.item-check input').forEach((b) => { b.disabled = on || b.closest('.item') && !!findItem(b.closest('.item').id.slice(5))?.unavailable; });
-    document.querySelectorAll('.seg, #browserSelect, #folderBtn, #subfolderChk, #numberChk')
+    document.querySelectorAll('.seg, #browserSelect, #folderBtn, #subfolderChk, #numberChk, .subs-row')
         .forEach((x) => { x.style.pointerEvents = on ? 'none' : ''; x.style.opacity = on ? '0.55' : ''; });
     if (!on) { paintMode(); updateSelection(); }
 }
@@ -299,6 +313,7 @@ $('downloadBtn').onclick = async () => {
         {
             mode: s.mode, quality: s.quality, browser: s.browser, outDir: s.outDir,
             subfolder: s.subfolder, number: s.number,
+            subs: s.subs, subLangs: s.subLangs, autoSubs: s.autoSubs,
             isPlaylist: state.playlist.isPlaylist, playlistTitle: state.playlist.title,
             total: state.playlist.items.length,
         },
