@@ -13,7 +13,8 @@ A simple yet powerful command-line tool to download videos from 1000+ websites i
 
 ## Prerequisites
 
-- Python 3.7 or higher
+- Python 3.7 or higher (with yt-dlp)
+- Node.js (for the desktop app)
 - ffmpeg (optional, but recommended for best quality)
 
 ## Installation
@@ -44,16 +45,30 @@ A simple yet powerful command-line tool to download videos from 1000+ websites i
 
 ## Desktop App (playlists)
 
-Double-click **`Videos Downloader.bat`** (or run `python app.py`) to open the app.
+An Electron desktop app (same style as my other apps) built on top of yt-dlp.
 
-1. Paste a YouTube **playlist** link (or a single video link) and press **Load**. Every video in the playlist is listed.
-2. Choose **Video (MP4)** with a max quality, or **Audio (MP3)**.
+**Run it:**
+```bash
+npm install
+npm start
+```
+After the first `npm install`, you can also double-click **`Videos Downloader.bat`**.
+
+**Use it:**
+1. Paste a YouTube **playlist** link (or a single video link) and press **Load**. Every video shows up with its thumbnail and length.
+2. Choose **Video · MP4** with a max quality, or **Audio · MP3** (with the cover image and info embedded).
 3. Optionally pick a browser under **Cookies from** for age-restricted or private videos.
-4. Press **Download all**, or select some rows and press **Download selected**.
+4. Untick anything you don't want, then press **Download**.
 
-By default, each playlist is saved in its own folder inside `downloads`, with the files numbered in playlist order (`01 - Title.mp4`). Files that are already there are skipped, so if a download is cancelled or fails you can run it again and it picks up where it stopped. A video that fails (for example, one that is private) is marked as failed, and the rest of the playlist still downloads.
+By default, files go to `Videos\Videos Downloader`, with each playlist in its own folder and the files numbered in playlist order (`01 - Title.mp4`). Your choices are remembered between sessions. Files that already exist are skipped, so after cancelling or a failure you can run it again and it continues where it stopped. A video that fails (for example, a private one) is marked as failed, and the rest of the playlist still downloads.
 
-> YouTube needs a JavaScript runtime (Node.js, Deno or Bun) installed for downloads to work. The app finds and uses whichever one is installed.
+**Requirements:** yt-dlp (`pip install yt-dlp`) and ffmpeg (`winget install ffmpeg`). The badge in the top right of the app shows whether both were found. You can also put `yt-dlp.exe` and `ffmpeg.exe` in the `bin` folder, where the app prefers them over installed copies and bundles them into the installer.
+
+**Build a Windows installer:**
+```bash
+npm run dist
+```
+The installer is created in `dist/`.
 
 ## Command Line Usage
 

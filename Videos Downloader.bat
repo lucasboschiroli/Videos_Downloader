@@ -1,4 +1,4 @@
 @echo off
-rem Double-click to open the Videos Downloader app (no console window).
+rem Double-click to open Videos Downloader (run "npm install" once first).
 cd /d "%~dp0"
-start "" pythonw app.py
+start "" "node_modules\electron\dist\electron.exe" .
