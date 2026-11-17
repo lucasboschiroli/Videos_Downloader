@@ -2,15 +2,18 @@ import yt_dlp
 import sys
 from pathlib import Path
 
-def download_video(url, output_path='downloads'):
+def download_video(url, output_path='downloads', use_cookies=False, browser='chrome'):
     Path(output_path).mkdir(parents=True, exist_ok=True)
     
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best',  
         'outtmpl': f'{output_path}/%(title)s.%(ext)s',  
         'merge_output_format': 'mp4',  
-        'progress_hooks': [progress_hook],  
+        'progress_hooks': [progress_hook],
     }
+    
+    if use_cookies:
+        ydl_opts['cookiesfrombrowser'] = (browser,)
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -31,7 +34,7 @@ def progress_hook(d):
     elif d['status'] == 'finished':
         print("\nDownload complete, processing...")
 
-def download_audio_only(url, output_path='downloads'):
+def download_audio_only(url, output_path='downloads', use_cookies=False, browser='chrome'):
     Path(output_path).mkdir(parents=True, exist_ok=True)
     
     ydl_opts = {
@@ -45,6 +48,9 @@ def download_audio_only(url, output_path='downloads'):
         'progress_hooks': [progress_hook],
     }
     
+    if use_cookies:
+        ydl_opts['cookiesfrombrowser'] = (browser,)
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             print(f"Downloading audio from: {url}")
@@ -55,7 +61,7 @@ def download_audio_only(url, output_path='downloads'):
         print(f"✗ Error downloading: {e}")
         return False
 
-def batch_download(urls_file, output_path='downloads'):
+def batch_download(urls_file, output_path='downloads', use_cookies=False, browser='chrome'):
     try:
         with open(urls_file, 'r') as f:
             urls = [line.strip() for line in f if line.strip()]
@@ -65,7 +71,7 @@ def batch_download(urls_file, output_path='downloads'):
         success = 0
         for i, url in enumerate(urls, 1):
             print(f"\n[{i}/{len(urls)}]")
-            if download_video(url, output_path):
+            if download_video(url, output_path, use_cookies, browser):
                 success += 1
         
         print(f"\n\nCompleted: {success}/{len(urls)} successful downloads")
@@ -79,23 +85,39 @@ def main():
         print("  Single video:  python downloader.py <URL>")
         print("  Audio only:    python downloader.py <URL> --audio")
         print("  Batch mode:    python downloader.py --batch <file.txt>")
+        print("  With cookies:  python downloader.py <URL> --cookies [browser]")
         print("\nExamples:")
         print("  python downloader.py https://youtube.com/watch?v=example")
+        print("  python downloader.py https://youtube.com/watch?v=example --cookies")
+        print("  python downloader.py https://youtube.com/watch?v=example --cookies firefox")
         print("  python downloader.py https://vimeo.com/123456 --audio")
-        print("  python downloader.py --batch urls.txt")
+        print("  python downloader.py --batch urls.txt --cookies")
         sys.exit(1)
+    
+    # Check for cookies flag
+    use_cookies = '--cookies' in sys.argv
+    browser = 'chrome'  # default
+    
+    if use_cookies:
+        # Check if browser is specified after --cookies
+        try:
+            cookies_index = sys.argv.index('--cookies')
+            if cookies_index + 1 < len(sys.argv) and not sys.argv[cookies_index + 1].startswith('-'):
+                browser = sys.argv[cookies_index + 1]
+        except (ValueError, IndexError):
+            pass
     
     if sys.argv[1] == '--batch':
         if len(sys.argv) < 3:
             print("Error: Please provide a file with URLs")
             sys.exit(1)
-        batch_download(sys.argv[2])
+        batch_download(sys.argv[2], use_cookies=use_cookies, browser=browser)
     elif '--audio' in sys.argv:
         url = sys.argv[1]
-        download_audio_only(url)
+        download_audio_only(url, use_cookies=use_cookies, browser=browser)
     else:
         url = sys.argv[1]
-        download_video(url)
+        download_video(url, use_cookies=use_cookies, browser=browser)
 
 if __name__ == '__main__':
     main()

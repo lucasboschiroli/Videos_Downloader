@@ -42,7 +42,20 @@ A simple yet powerful command-line tool to download videos from 1000+ websites i
    sudo apt install ffmpeg
    ```
 
-## Usage
+## Desktop App (playlists)
+
+Double-click **`Videos Downloader.bat`** (or run `python app.py`) to open the app.
+
+1. Paste a YouTube **playlist** link (or a single video link) and press **Load**. Every video in the playlist is listed.
+2. Choose **Video (MP4)** with a max quality, or **Audio (MP3)**.
+3. Optionally pick a browser under **Cookies from** for age-restricted or private videos.
+4. Press **Download all**, or select some rows and press **Download selected**.
+
+By default, each playlist is saved in its own folder inside `downloads`, with the files numbered in playlist order (`01 - Title.mp4`). Files that are already there are skipped, so if a download is cancelled or fails you can run it again and it picks up where it stopped. A video that fails (for example, one that is private) is marked as failed, and the rest of the playlist still downloads.
+
+> YouTube needs a JavaScript runtime (Node.js, Deno or Bun) installed for downloads to work. The app finds and uses whichever one is installed.
+
+## Command Line Usage
 
 ### Download a single video
 
